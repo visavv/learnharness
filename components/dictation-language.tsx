@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { DICTATION_LANGUAGES, type DictationLanguage } from "@/src/core";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { DICTATION_LANGUAGES, isDictationEndpoint, type DictationLanguage } from "@/src/core";
 import { MenuShell } from "@/components/menu-shell";
 import { useInteractionLayers } from "@/components/interaction-layers";
 import { Hint } from "@/components/ui/hint";
@@ -17,6 +17,48 @@ export function DictationLanguageSetting() {
 	const active = useDictationActive();
 	return <SettingsRow label="Language" testid="row-dictation-language" dimmed={active}>
 		<DictationLanguagePicker preference={preference} disabled={active} />
+	</SettingsRow>;
+}
+
+/** The Deepgram-compatible server row: empty = the Deepgram cloud (key
+ *  above); a ws:// URL routes dictation to a server the user runs, e.g. a
+ *  local Whisper bridge, and no key is needed. Saves on Enter or blur. */
+export function DictationEndpointSetting() {
+	const { endpoint, language, saving, saveEndpoint } = useDictationLanguage();
+	const active = useDictationActive();
+	const [draft, setDraft] = useState<string | null>(null);
+	const [invalid, setInvalid] = useState(false);
+	const value = draft ?? endpoint ?? "";
+	const commit = async () => {
+		if (draft === null) return;
+		const next = draft.trim();
+		if (next === (endpoint ?? "")) { setDraft(null); return; }
+		if (!isDictationEndpoint(next)) { setInvalid(true); return; }
+		if (await saveEndpoint(next)) { setDraft(null); setInvalid(false); }
+	};
+	return <SettingsRow
+		label="Server"
+		hint={invalid ? "Use a ws:// or wss:// URL" : "Empty uses Deepgram. A Deepgram-compatible URL (e.g. a local Whisper server) needs no key."}
+		testid="row-dictation-endpoint"
+		dimmed={active}
+	>
+		<input
+			type="text"
+			value={value}
+			onChange={(e) => { setDraft(e.target.value); setInvalid(false); }}
+			onBlur={() => { void commit(); }}
+			onKeyDown={(e) => {
+				if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); void commit(); }
+				if (e.key === "Escape" && draft !== null) { e.stopPropagation(); setDraft(null); setInvalid(false); }
+			}}
+			placeholder="Deepgram cloud"
+			aria-label="Dictation server URL"
+			aria-invalid={invalid}
+			data-testid="dictation-endpoint"
+			disabled={active || saving || language === undefined}
+			spellCheck={false}
+			className="h-7 w-56 min-w-0 rounded-sm border border-border bg-background px-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50 aria-invalid:border-red-500"
+		/>
 	</SettingsRow>;
 }
 

@@ -59,6 +59,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		stops: 0,
 		appends: [] as string[],
 		claimed: undefined as ((text: string) => void) | undefined,
+		token: { token: "test-token" } as { token: string | null; endpoint?: string },
 	};
 	Socket.all = [];
 	const previous = new Map<string, PropertyDescriptor | undefined>();
@@ -72,7 +73,7 @@ async function fixture(language: "pl" | "en" = "pl", delayedRead?: Promise<Respo
 		WebSocket: Socket, AudioContext: AudioGraph, AudioWorkletNode: Worklet,
 		IS_REACT_ACT_ENVIRONMENT: true,
 		fetch: async (url: string, init?: RequestInit) => {
-			if (url === "/api/stt/token") return Response.json({ token: "test-token" });
+			if (url === "/api/stt/token") return Response.json(state.token);
 			if (url === "/api/settings") {
 				state.reads++;
 				if (state.nextRead) { const response = state.nextRead; state.nextRead = undefined; return response; }
@@ -373,4 +374,27 @@ test("microphone permission resolving after unmount immediately stops the late s
 	assert.equal(f.state.stops, 1);
 	assert.equal(Socket.all.length, 0);
 	assert.equal(isDictationActive(), false);
+});
+
+test("a configured server endpoint connects without a token; the cloud comes back after it is cleared", async () => {
+	const f = await fixture("en");
+	await f.mount();
+	f.state.token = { token: null, endpoint: "ws://127.0.0.1:8765" };
+	// The settings write re-warms the connection, so the next run follows it.
+	await act(async () => { notifySettingsSaved("dictation"); });
+	await act(async () => { f.dictation.toggle(); });
+	const local = Socket.all.at(-1)!;
+	assert.equal(new URL(local.url).origin + new URL(local.url).pathname, "ws://127.0.0.1:8765/v1/listen");
+	assert.equal(local.language, "en");
+	assert.equal(local.protocols, undefined, "no credentials go to a user-run server");
+	await act(async () => { local.open(); local.final("Hei maailma"); });
+	await act(async () => { f.dictation.stop(); });
+	await act(async () => { local.end(); });
+	assert.deepEqual(f.state.appends, ["Hei maailma"]);
+	f.state.token = { token: "test-token", endpoint: "" };
+	await act(async () => { notifySettingsSaved("dictation"); });
+	await act(async () => { f.dictation.toggle(); });
+	const cloud = Socket.all.at(-1)!;
+	assert.equal(new URL(cloud.url).origin, "wss://api.deepgram.com");
+	assert.deepEqual(cloud.protocols, ["bearer", "test-token"]);
 });

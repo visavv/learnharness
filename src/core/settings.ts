@@ -35,7 +35,7 @@ import { CLAUDE_CODE_PROVIDER } from "./contracts/claude-code.ts";
 import type { ModelRole } from "../../config.ts";
 import type { ChatSettings } from "./contracts/chat.ts";
 import { isSearchEngineId, type SearchEngineId } from "./search.ts";
-import { isDictationLanguage, type DictationLanguage } from "./dictation.ts";
+import { isDictationEndpoint, isDictationLanguage, type DictationLanguage } from "./dictation.ts";
 import { parseFileAccessSettings, type FileAccessSettings } from "./file-access.ts";
 import { COLOR_OVERRIDE_KEYS, isThemeId, type AppearanceColorOverrides } from "./themes.ts";
 
@@ -345,6 +345,9 @@ export interface GeneralSettings {
 /** One app-wide dictation preference, shared by every composer. */
 export interface DictationSettings {
 	language?: DictationLanguage;
+	/** A Deepgram-compatible streaming server (ws:// or wss:// base URL);
+	 *  "" or absent = the Deepgram cloud. A set endpoint needs no key. */
+	endpoint?: string;
 }
 
 /** Agent settings — everything about the non-conversation machinery. */
@@ -570,7 +573,7 @@ export const FACTORY_SETTINGS: FactorySettings = {
 	version: CURRENT_SETTINGS_VERSION,
 	agent: { workerRequestConcurrency: 8 },
 	general: { autoUpdate: true },
-	dictation: { language: "en" },
+	dictation: { language: "en", endpoint: "" },
 	appearance: {
 		theme: "default",
 		background: null, // null = the active theme's background
@@ -907,10 +910,10 @@ export function sanitizeUserSettings(raw: unknown): UserSettings | null {
 	}
 	if (r.dictation !== undefined) {
 		const raw = r.dictation;
-		out.dictation = raw !== null && typeof raw === "object" && !Array.isArray(raw) &&
-			isDictationLanguage((raw as Record<string, unknown>).language)
-			? { language: (raw as DictationSettings).language }
-			: {};
+		const fields = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+		out.dictation = {};
+		if (isDictationLanguage(fields.language)) out.dictation.language = fields.language;
+		if (isDictationEndpoint(fields.endpoint) && fields.endpoint !== "") out.dictation.endpoint = fields.endpoint;
 	}
 	if (r.claudeCode !== undefined) {
 		const raw = r.claudeCode;

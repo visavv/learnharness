@@ -108,3 +108,28 @@ test("capture also waits for a write initiated as a pending read publishes its r
 	assert.equal(await store.getLanguage(), "multi");
 	off();
 });
+
+test("language and server writes each carry the other field — one never clears the other", async () => {
+	const puts: unknown[] = [];
+	const store = createDictationLanguageStore(async (_url, init) => {
+		if (init?.method === "PUT") {
+			const body = JSON.parse(init.body as string) as { language: string; endpoint: string };
+			puts.push(body);
+			// The server stores "" as an absent endpoint (the parser drops it).
+			const dictation = body.endpoint ? body : { language: body.language };
+			return Response.json({ settings: { version: 1, dictation } });
+		}
+		return Response.json({ settings: { version: 1, dictation: { language: "fi", endpoint: "ws://127.0.0.1:8765" } } });
+	});
+	assert.equal(await store.load(), "fi");
+	assert.equal(store.getSnapshot().endpoint, "ws://127.0.0.1:8765");
+	assert.equal(await store.save("en"), true);
+	assert.equal(store.getSnapshot().endpoint, "ws://127.0.0.1:8765");
+	assert.equal(await store.saveEndpoint(""), true);
+	assert.equal(store.getSnapshot().endpoint, "");
+	assert.equal(store.getSnapshot().language, "en");
+	assert.deepEqual(puts, [
+		{ language: "en", endpoint: "ws://127.0.0.1:8765" },
+		{ language: "en", endpoint: "" },
+	]);
+});

@@ -200,6 +200,7 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 		},
 		dictation: {
 			language: record?.dictation?.language ?? FACTORY_SETTINGS.dictation.language,
+			endpoint: record?.dictation?.endpoint ?? FACTORY_SETTINGS.dictation.endpoint,
 		},
 		agent: {
 			workerRequestConcurrency: agent.workerRequestConcurrency ?? FACTORY_SETTINGS.agent.workerRequestConcurrency,

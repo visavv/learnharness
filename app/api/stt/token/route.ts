@@ -12,10 +12,20 @@
  * NOTE: the key needs ≥ Member permission in the Deepgram console to call
  * /auth/grant (their docs, token-based auth FAQ) — plain read/transcribe
  * keys return FORBIDDEN here.
+ *
+ * A configured dictation endpoint (Settings → Dictation → Server: a
+ * Deepgram-compatible server the user runs, e.g. a local Whisper bridge)
+ * short-circuits the mint: no key, no token — the renderer connects to the
+ * endpoint unauthenticated. The response always names the endpoint
+ * ("" = Deepgram cloud) so the renderer's socket follows the CURRENT
+ * setting on every run, never a stale page-mount read.
  */
-import { keyValue } from "@/src/server";
+import { effectiveSettings, keyValue } from "@/src/server";
 
 export async function GET() {
+	const { endpoint } = effectiveSettings().dictation;
+	if (endpoint) return Response.json({ token: null, endpoint });
+
 	const key = keyValue("DEEPGRAM_API_KEY");
 	if (!key) {
 		return Response.json(
@@ -41,7 +51,7 @@ export async function GET() {
 		if (!data.access_token) {
 			return Response.json({ message: "Deepgram grant returned no token" }, { status: 502 });
 		}
-		return Response.json({ token: data.access_token });
+		return Response.json({ token: data.access_token, endpoint: "" });
 	} catch {
 		return Response.json({ message: "Deepgram unreachable" }, { status: 502 });
 	}

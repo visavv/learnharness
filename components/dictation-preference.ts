@@ -7,7 +7,13 @@ import {
 } from "@/src/core";
 import { notifySettingsSaved, onSettingsSaved } from "@/components/settings-signal";
 
-const INITIAL = { language: undefined as DictationLanguage | undefined, saving: false, error: null as string | null };
+const INITIAL = {
+	language: undefined as DictationLanguage | undefined,
+	/** The Deepgram-compatible server URL; "" = Deepgram cloud. */
+	endpoint: undefined as string | undefined,
+	saving: false,
+	error: null as string | null,
+};
 
 /** One confirmed preference and one write in flight, shared by every surface.
  * The factory keeps transport tests isolated without a second persistence path.
@@ -40,8 +46,9 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 				if (body.settings !== null && record === null) throw new Error();
 				if (version !== revision) return getLanguage();
 				const language = record?.dictation?.language ?? FACTORY_SETTINGS.dictation.language;
+				const endpoint = record?.dictation?.endpoint ?? FACTORY_SETTINGS.dictation.endpoint;
 				needsRead = false;
-				publish({ language, error: null });
+				publish({ language, endpoint, error: null });
 				return language;
 			} catch {
 				if (version !== revision) return getLanguage();
@@ -56,26 +63,38 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 	}
 
 	function save(language: DictationLanguage): Promise<boolean> {
+		return write({ language }, "Could not save dictation language. Try again.");
+	}
+
+	/** Set the Deepgram-compatible server ("" = back to the Deepgram cloud). */
+	function saveEndpoint(endpoint: string): Promise<boolean> {
+		return write({ endpoint }, "Could not save dictation server. Try again.");
+	}
+
+	/** One PUT replaces the WHOLE dictation section, so every write carries
+	 *  both confirmed fields — saving one never clears the other. */
+	function write(patch: { language?: DictationLanguage; endpoint?: string }, failure: string): Promise<boolean> {
 		// A different selection must never inherit the previous write's success.
 		if (writing || snapshot.language === undefined) return Promise.resolve(false);
 		revision++;
 		reading = null;
+		const section = { language: snapshot.language, endpoint: snapshot.endpoint ?? "", ...patch };
 		writing = Promise.resolve().then(async () => {
 			try {
 				const res = await request("/api/settings/dictation", {
 					method: "PUT", headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ language }),
+					body: JSON.stringify(section),
 				});
 				if (!res.ok) throw new Error();
 				const body = await res.json() as { settings: UserSettings };
 				const confirmed = body.settings?.dictation?.language;
 				if (!isDictationLanguage(confirmed)) throw new Error();
 				needsRead = false;
-				publish({ language: confirmed, error: null });
+				publish({ language: confirmed, endpoint: body.settings.dictation?.endpoint ?? "", error: null });
 				saved();
 				return true;
 			} catch {
-				publish({ error: "Could not save dictation language. Try again." });
+				publish({ error: failure });
 				return false;
 			} finally {
 				writing = null;
@@ -96,7 +115,7 @@ export function createDictationLanguageStore(request: typeof fetch, saved: () =>
 	}
 
 	return {
-		load, save, getLanguage,
+		load, save, saveEndpoint, getLanguage,
 		getSnapshot: () => snapshot,
 		getServerSnapshot: () => INITIAL,
 		subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -128,5 +147,5 @@ function subscribe(listener: () => void) {
 
 export function useDictationLanguage() {
 	const snapshot = useSyncExternalStore(subscribe, store.getSnapshot, store.getServerSnapshot);
-	return { ...snapshot, load: store.load, save: store.save, getLanguage: store.getLanguage };
+	return { ...snapshot, load: store.load, save: store.save, saveEndpoint: store.saveEndpoint, getLanguage: store.getLanguage };
 }

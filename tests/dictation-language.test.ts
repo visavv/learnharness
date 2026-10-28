@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { after, describe, it } from "node:test";
-import { DICTATION_LANGUAGES, deepgramListenUrl, isDictationLanguage } from "../src/core/dictation.ts";
+import { DICTATION_LANGUAGES, deepgramListenUrl, dictationListenUrl, isDictationEndpoint, isDictationLanguage } from "../src/core/dictation.ts";
 import { sanitizeUserSettings } from "../src/core/settings.ts";
 import { resolveSettings } from "../src/core/settings-resolution.ts";
 import { parseDictationSettingsBody } from "../src/server/settings-body.ts";
@@ -79,4 +79,37 @@ it("the section route persists language independently and rejects unsupported va
 	}), { params: Promise.resolve({ section: "general" }) });
 	assert.equal(general.status, 200);
 	assert.deepEqual(readSettings(), { ...saved, general: { autoUpdate: true } }, "auto-update cannot erase dictation language");
+});
+
+describe("Deepgram-compatible dictation endpoint", () => {
+	it("accepts ws/wss base URLs and the empty cloud value only", () => {
+		for (const value of ["", "ws://127.0.0.1:8765", "wss://stt.example.com", "ws://localhost:8765/base/"]) {
+			assert.ok(isDictationEndpoint(value), value);
+		}
+		for (const value of ["http://127.0.0.1:8765", "127.0.0.1:8765", "ws://x?model=y", "ws://x#a", "not a url", null, 3]) {
+			assert.equal(isDictationEndpoint(value), false, String(value));
+		}
+	});
+
+	it("an endpoint keeps the /v1/listen path and every tuned parameter", () => {
+		const cloud = new URL(dictationListenUrl("fi", ""));
+		const local = new URL(dictationListenUrl("fi", "ws://127.0.0.1:8765/"));
+		assert.equal(cloud.origin + cloud.pathname, "wss://api.deepgram.com/v1/listen");
+		assert.equal(local.origin + local.pathname, "ws://127.0.0.1:8765/v1/listen");
+		assert.equal(local.search, cloud.search);
+		assert.equal(deepgramListenUrl("fi"), dictationListenUrl("fi", ""));
+	});
+
+	it("parses, sanitizes and resolves the endpoint independently of the language", () => {
+		assert.deepEqual(parseDictationSettingsBody({ language: "en", endpoint: "ws://127.0.0.1:8765" }), {
+			ok: true, settings: { language: "en", endpoint: "ws://127.0.0.1:8765" },
+		});
+		assert.deepEqual(parseDictationSettingsBody({ language: "en", endpoint: "" }), { ok: true, settings: { language: "en" } });
+		assert.equal(parseDictationSettingsBody({ endpoint: "http://127.0.0.1" }).ok, false);
+		assert.equal(resolveSettings(null).dictation.endpoint, "");
+		const kept = sanitizeUserSettings({ version: 1, dictation: { language: "xx", endpoint: "ws://127.0.0.1:8765" } });
+		assert.deepEqual(resolveSettings(kept).dictation, { language: "en", endpoint: "ws://127.0.0.1:8765" });
+		const dropped = sanitizeUserSettings({ version: 1, dictation: { language: "fi", endpoint: "http://x" } });
+		assert.deepEqual(resolveSettings(dropped).dictation, { language: "fi", endpoint: "" });
+	});
 });

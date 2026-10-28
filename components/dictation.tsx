@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2Icon, MicIcon } from "lucide-react";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
 import { Hint } from "@/components/ui/hint";
-import { deepgramListenUrl, type DictationLanguage } from "@/src/core";
+import { dictationListenUrl, type DictationLanguage } from "@/src/core";
 import { useDictationLanguage } from "@/components/dictation-preference";
 import { setDictationActive } from "@/components/dictation-state";
 import { dispatchFocusedPluginShortcut } from "@/components/plugin-input-focus";
+import { useSettingsSaved } from "@/components/settings-signal";
 export { isDictationActive } from "@/components/dictation-state";
 
 /**
@@ -150,15 +151,32 @@ function registerController(id: symbol, controller: { primary: boolean; toggle: 
  *  DEEPGRAM_API_KEY) is the route's ONLY 503 — the raw message is
  *  dev-speak, so the error becomes the short client-authored line
  *  (zero-keys wave, owner 2026-09-25). */
-async function mintFreshToken(): Promise<string> {
+async function mintFreshToken(): Promise<SttConnection> {
 	const res = await fetch("/api/stt/token");
-	const data = (await res.json()) as { token?: string; message?: string };
+	const data = (await res.json()) as { token?: string | null; endpoint?: string; message?: string };
+	const endpoint = typeof data.endpoint === "string" ? data.endpoint : "";
+	// A configured endpoint (Settings → Dictation → Server) needs no token.
+	if (res.ok && endpoint) return { token: null, endpoint };
 	if (!res.ok || !data.token) {
 		if (res.status === 503) throw new Error(DICTATION_KEYLESS);
 		throw new Error(data.message ?? `token route ${res.status}`);
 	}
-	return data.token;
+	return { token: data.token, endpoint: "" };
 }
+
+/** Where one run's socket goes: the Deepgram cloud with a minted token, or
+ *  a user-run Deepgram-compatible endpoint (token null — unauthenticated). */
+export type SttConnection = { token: string | null; endpoint: string };
+
+/** Who the error lines name: the cloud, or the user's own server. */
+function serverLabel(conn: SttConnection): string {
+	return conn.endpoint ? "Dictation server" : "Deepgram";
+}
+
+/** The stop path's no-close backstop. A local endpoint transcribes the
+ *  tail of the run on CloseStream (a Whisper bridge finishes the last
+ *  segment then), so it gets longer before the run is cut. */
+const CLOSE_SAFETY_MS = { cloud: 3000, endpoint: 15000 } as const;
 
 /** Warm-token cache (mitigation D, owner 2026-09-27): the click path takes
  *  the cached promise instead of a remote mint. TTL keeps a cached token
@@ -169,15 +187,15 @@ async function mintFreshToken(): Promise<string> {
  *  failures are silently tolerated (a keyless pre-mint just doesn't warm). */
 export const WARM_TOKEN_TTL_MS = 3 * 60_000;
 
-export type WarmMinter = { mint: () => Promise<string>; refresh: () => void };
+export type WarmMinter<T = string> = { mint: () => Promise<T>; refresh: () => void };
 
-export function createWarmMinter(
-	mint: () => Promise<string>,
+export function createWarmMinter<T = string>(
+	mint: () => Promise<T>,
 	now: () => number = Date.now,
 	ttlMs: number = WARM_TOKEN_TTL_MS,
-): WarmMinter {
-	let warm: { p: Promise<string>; at: number } | null = null;
-	const m: WarmMinter = {
+): WarmMinter<T> {
+	let warm: { p: Promise<T>; at: number } | null = null;
+	const m: WarmMinter<T> = {
 		mint: () => {
 			if (!warm || now() - warm.at > ttlMs) {
 				const p = mint().catch((e: unknown) => {
@@ -346,6 +364,11 @@ export function useDictation({ append, destination = "primary", disabled = false
 	const primary = destination === "primary";
 	const owner = useRef(Symbol("dictation")).current;
 	const { getLanguage } = useDictationLanguage();
+	// A dictation settings write may change the server: re-warm so the next
+	// run never connects through a connection cached under the old setting.
+	useSettingsSaved((section) => {
+		if (section === "dictation") warmTokens.refresh();
+	});
 	const [phase, setPhaseState] = useState<DictationPhase>("idle");
 	const phaseRef = useRef<DictationPhase>("idle");
 	const setPhase = useCallback((next: DictationPhase) => {
@@ -375,6 +398,9 @@ export function useDictation({ append, destination = "primary", disabled = false
 	// the per-run nodes disconnect on teardown; the socket is recreated per
 	// run; the AudioContext is app-lifetime (mitigation C).
 	const wsRef = useRef<WebSocket | null>(null);
+	/** The current run's connection (cloud or endpoint) — the stop path's
+	 *  safety-net length reads it. */
+	const connRef = useRef<SttConnection | null>(null);
 	const streamRef = useRef<MediaStream | null>(null);
 	/** Per-run graph nodes — the CONTEXT outlives runs (mitigation C). */
 	const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -467,11 +493,14 @@ export function useDictation({ append, destination = "primary", disabled = false
 
 	/** Open the Deepgram socket and wire its messages. `gen` guards staleness. */
 	const openSocket = useCallback(
-		(gen: number, token: string, language: DictationLanguage) => {
+		(gen: number, conn: SttConnection, language: DictationLanguage) => {
+			connRef.current = conn;
 			// Minted JWTs authenticate via the "bearer" subprotocol — ["token",
 			// jwt] is rejected at the handshake (verified live; "token" is for
-			// raw API keys only, as in the owner's pi dictate extension).
-			const ws = new WebSocket(deepgramListenUrl(language), ["bearer", token]);
+			// raw API keys only, as in the owner's pi dictate extension). A
+			// user-run endpoint takes no credentials at all.
+			const url = dictationListenUrl(language, conn.endpoint);
+			const ws = conn.token ? new WebSocket(url, ["bearer", conn.token]) : new WebSocket(url);
 			wsRef.current = ws;
 
 			ws.addEventListener("open", () => {
@@ -517,12 +546,12 @@ export function useDictation({ append, destination = "primary", disabled = false
 						})
 						.catch(() => {
 							if (gen === genRef.current) {
-								setError("Deepgram reconnect failed");
+								setError(`${serverLabel(conn)} reconnect failed`);
 								cleanup();
 							}
 						});
 				} else {
-					setError(`Deepgram connection lost (${ev.code})`);
+					setError(`${serverLabel(conn)} connection lost (${ev.code})`);
 					cleanup();
 				}
 			});
@@ -624,7 +653,7 @@ export function useDictation({ append, destination = "primary", disabled = false
 			return;
 		}
 		if (gen !== genRef.current) return;
-		let token: string;
+		let token: SttConnection;
 		try {
 			token = await tokenPromise;
 		} catch (e) {
@@ -665,7 +694,7 @@ export function useDictation({ append, destination = "primary", disabled = false
 			// does, the safety net ends the run anyway (dictate pattern).
 			safetyRef.current = setTimeout(() => {
 				if (gen === genRef.current) cleanup();
-			}, 3000);
+			}, connRef.current?.endpoint ? CLOSE_SAFETY_MS.endpoint : CLOSE_SAFETY_MS.cloud);
 		} else {
 			cleanup();
 		}

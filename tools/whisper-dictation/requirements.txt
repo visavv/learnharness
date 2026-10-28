@@ -1,0 +1,5 @@
+faster-whisper==1.2.1
+websockets==17.0.1
+# NVIDIA GPU on Windows/Linux: cuBLAS + cuDNN for ctranslate2
+nvidia-cublas-cu12; sys_platform != "darwin"
+nvidia-cudnn-cu12==9.*; sys_platform != "darwin"

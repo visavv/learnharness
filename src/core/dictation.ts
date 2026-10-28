@@ -83,7 +83,31 @@ export function isDictationLanguage(value: unknown): value is DictationLanguage 
 
 /** Only language varies. Keep the owner's tuned streaming parameters. */
 export function deepgramListenUrl(language: DictationLanguage): string {
-	return "wss://api.deepgram.com/v1/listen" +
+	return dictationListenUrl(language, "");
+}
+
+const DEEPGRAM_BASE_URL = "wss://api.deepgram.com";
+
+/** A Deepgram-compatible streaming server the user runs themselves (a
+ *  local Whisper bridge, Deepgram self-hosted): a ws:// or wss:// base URL
+ *  without query or fragment. Empty string = the Deepgram cloud. */
+export function isDictationEndpoint(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	if (value === "") return true;
+	try {
+		const url = new URL(value);
+		return (url.protocol === "ws:" || url.protocol === "wss:") && url.search === "" && url.hash === "";
+	} catch {
+		return false;
+	}
+}
+
+/** The streaming URL for the cloud (empty endpoint) or a Deepgram-compatible
+ *  endpoint: same /v1/listen path, same tuned parameters, so a compatible
+ *  server sees exactly what Deepgram would. */
+export function dictationListenUrl(language: DictationLanguage, endpoint: string): string {
+	const base = endpoint ? endpoint.replace(/\/+$/, "") : DEEPGRAM_BASE_URL;
+	return base + "/v1/listen" +
 		"?model=nova-3&encoding=linear16&sample_rate=16000&channels=1" +
 		"&smart_format=true&punctuate=true&endpointing=300" +
 		`&language=${encodeURIComponent(language)}`;
