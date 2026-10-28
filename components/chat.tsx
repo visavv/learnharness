@@ -1934,7 +1934,7 @@ export function Chat({
 													}
 													case "reasoning":
 														return (
-															<Reasoning key={pi} isStreaming={status === "streaming" && isLastPart} className="mb-2">
+															<Reasoning key={pi} isStreaming={status === "streaming" && isLastPart} defaultOpen autoClose={false} className="mb-2">
 																<ReasoningTrigger />
 																<ReasoningContent>{part.text ?? ""}</ReasoningContent>
 															</Reasoning>
