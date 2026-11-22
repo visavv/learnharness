@@ -968,6 +968,27 @@ export function Chat({
 	 * Falling edge of `active` only (idle→idle never focuses), and ONLY the
 	 * composer: with a question pending the Composer is unmounted, the ref
 	 * is null, and the thinking field is left alone by design. */
+	/* Hands-free answering (personal build): dictation starts by itself each
+	 * time a thinking box becomes available — once per question, and once per
+	 * settled agent reply during a practice problem. Submitting already
+	 * finishes the run first (nothing is lost); Esc cancels it and it stays
+	 * off until the next box. The plain composer never auto-records, and a
+	 * plugin-owned dock is left alone. */
+	const autoDictateKey = pluginOwnsDock
+		? null
+		: pending
+			? `q:${pending.key}`
+			: activeProblem && !busy
+				? `p:${activeProblem.toolCallId}:${messages.length}`
+				: null;
+	const autoDictatedRef = useRef<string | null>(null);
+	const dictationRef = useRef(dictation);
+	dictationRef.current = dictation;
+	useEffect(() => {
+		if (!autoDictateKey || autoDictatedRef.current === autoDictateKey) return;
+		autoDictatedRef.current = autoDictateKey;
+		if (!dictationRef.current.active && !dictationRef.current.blocked) dictationRef.current.toggle();
+	}, [autoDictateKey]);
 	const dictationWasActiveRef = useRef(false);
 	const composerInputRef = useRef<HTMLDivElement>(null);
 
@@ -2506,12 +2527,13 @@ export function DockOverlay({
 	atBottomRef.current = isAtBottom;
 	// Teach-phase mount (session reload with a pending check): the dock starts
 	// as the collapsed invitation too — the check must not pop open on reload.
-	const [expanded, setExpanded] = useState(!requiresReveal);
-	// Reveal state (W5): false until the learner clicks the invitation. While
-	// false, the scroll machine must NOT auto-expand at the bottom — the
-	// learner reads the teaching first and opens the check when ready. Once
-	// revealed, the normal collapse machine rules apply untouched.
-	const [revealed, setRevealed] = useState(false);
+	// Personal build: every question — teach-phase checks included — arrives
+	// OPEN and revealed, so the keyboard can answer it without a click.
+	const [expanded, setExpanded] = useState(true);
+	// Reveal state (W5): upstream keeps a teach check behind its invitation
+	// until clicked; here it is revealed from the start (the reading-thinking
+	// field above the dock stays available either way).
+	const [revealed, setRevealed] = useState(true);
 	const revealPending = requiresReveal && !revealed;
 
 	const pendingId = pluginQuestion ? pluginQuestionOccurrenceKey(pluginQuestion.occurrence) : unreadablePlugin ? "unreadable-plugin-question" : pending?.key ?? null;
@@ -2538,16 +2560,12 @@ export function DockOverlay({
 	// only motion is the teaching text itself.
 	const prevPendingIdRef = useRef(pendingId);
 	if (pendingId !== prevPendingIdRef.current) {
-		const wasQuestion = prevPendingIdRef.current !== null;
 		prevPendingIdRef.current = pendingId;
-		if (pendingId && requiresReveal) {
-			const arrival = revealArrival(wasQuestion);
-			setExpanded(arrival.expanded);
-			setRevealed(arrival.revealed);
-		} else if (pendingId) {
-			// Probe arrival (flicker round): open iff following at the bottom.
-			// Painted in THIS render — no stale-open frame, no after-paint flip.
-			setExpanded(probeArrivalExpanded(atBottomRef.current));
+		if (pendingId) {
+			// Personal build: open on arrival, wherever the learner is
+			// scrolled. Painted in THIS render — no stale frame, no flip.
+			setExpanded(true);
+			setRevealed(true);
 		}
 	}
 
@@ -2561,7 +2579,9 @@ export function DockOverlay({
 	// starts in its initial state — no scroll, no morph.
 	useEffect(() => {
 		if (!pendingId || pendingId === initialPendingRef.current) return;
-		if (!requiresReveal && atBottomRef.current) void suppressFoldDuringReveal();
+		// Teach checks open on arrival too (personal build), so they get the
+		// same fold suppression as probe questions.
+		if (atBottomRef.current) void suppressFoldDuringReveal();
 		// fire only when a NEW question lands
 	}, [pendingId]);
 

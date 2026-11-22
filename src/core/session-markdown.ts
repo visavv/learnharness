@@ -100,6 +100,7 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 				answers: string[];
 				other: string;
 				dismissed: boolean;
+				redirect: string;
 		  }>
 		| undefined;
 
@@ -120,6 +121,7 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
 		const body = [`**Q:** ${question}`];
 		if (out?.dismissed === true) body.push("The learner skipped this check.");
+		else if (typeof out?.redirect === "string" && out.redirect) body.push(`The learner didn't answer; instead they told the teacher: ${out.redirect}`);
 		else if (out?.dontKnow === true) body.push("The learner did not know.");
 		else if (out?.correct === true) body.push("The learner answered correctly.");
 		else if (out?.correct === false) body.push("The learner answered incorrectly.");
@@ -162,7 +164,8 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 			...(Array.isArray(out?.answers) ? out!.answers! : []),
 			...(typeof out?.other === "string" && out.other.trim() ? [out.other.trim()] : []),
 		];
-		if (typeof out?.text === "string" && out.text.trim()) body.push(`The learner answered: ${out.text.trim()}`);
+		if (typeof out?.redirect === "string" && out.redirect) body.push(`The learner didn't answer; instead they told the teacher: ${out.redirect}`);
+		else if (typeof out?.text === "string" && out.text.trim()) body.push(`The learner answered: ${out.text.trim()}`);
 		else if (chosen.length > 0) body.push(`The learner chose: ${chosen.join(", ")}`);
 		else if (out?.dismissed === true) body.push("The learner skipped this question.");
 		if (typeof out?.note === "string" && out.note) body.push(`*(his thinking: ${out.note})*`);

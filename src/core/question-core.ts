@@ -473,6 +473,10 @@ export interface QuestionAnswerData {
 	committed?: string; // explain only (rendering): the model's committed answer
 	explanation?: string; // quiz only (rendering)
 	dismissed?: boolean;
+	/** The learner's message to the teacher IN PLACE of an answer (the
+	 *  dock's steer line, personal build): the question stays unanswered —
+	 *  no verdict. */
+	redirect?: string;
 	answeredAt: string;
 }
 
@@ -817,6 +821,14 @@ export function dismissedAnswer(kind: QuestionKind, questionText: string): Quest
 
 export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, unknown> {
 	if (ad.dismissed) return { kind: ad.kind, dismissed: true };
+	if (ad.redirect) {
+		// No verdict, no confidence — the learner chose to talk instead.
+		const steer: Record<string, unknown> = { kind: ad.kind, answered: false, learnerMessage: ad.redirect };
+		const thought = ad.thinking ?? ad.note;
+		if (thought) steer.thinking = thought;
+		if (ad.readingThinking) steer.thinkingWhileReading = ad.readingThinking;
+		return steer;
+	}
 	const out: Record<string, unknown> = { kind: ad.kind };
 	if (ad.dontKnow) out.dontKnow = true;
 	// Array.isArray: the seam is called with `unknown` answers (test

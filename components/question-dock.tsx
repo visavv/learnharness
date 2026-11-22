@@ -378,6 +378,17 @@ export function QuestionDockBar({
 }
 
 /** The expanded question: label, question, options, and the unified bottom row. */
+/** The digit that acts on a row (1–9; rows past nine have no key).
+ *  Personal build: number keys answer without the arrow walk. */
+function RowKey({ index }: { index: number }) {
+	if (index > 8) return null;
+	return (
+		<kbd aria-hidden data-row-key={index + 1} className="ml-auto shrink-0 self-center pl-2 font-mono text-[10px] text-muted-foreground/50">
+			{index + 1}
+		</kbd>
+	);
+}
+
 function QuestionDockForm({
 	viewReader,
 	toolName,
@@ -474,6 +485,12 @@ function QuestionDockForm({
 	 * in time — submit reads these, kept current at every write site. */
 	const thinkingTextRef = useRef(initialDraft?.thinking ?? "");
 	const answerTextRef = useRef(initialDraft?.text ?? "");
+	// The steer line (personal build): a message instead of an answer. Same
+	// ref-mirror discipline — a dictation flush can land in it before send.
+	const [steer, setSteer] = useState("");
+	const steerTextRef = useRef("");
+	const steerRef = useRef<HTMLInputElement>(null);
+	const steerFocusedRef = useRef(false);
 	// Confidence (owner, 2026-10-01): an index into CONFIDENCE_STOPS,
 	// resting at 50 — a real coin flip by definition, untouched or
 	// deliberate (the same number, the same meaning). The dock unmounts
@@ -492,7 +509,12 @@ function QuestionDockForm({
 				// Ref-first (see the refs block above): the join is computed from
 				// the mirror, then both mirrors agree with state — a submit
 				// resuming post-finish reads the tail, never a stale closure.
-				if (qd.mode === "text") {
+				// The steer line takes the speech while it has focus.
+				if (steerFocusedRef.current) {
+					const v = joinDictation(steerTextRef.current, t);
+					steerTextRef.current = v;
+					setSteer(v);
+				} else if (qd.mode === "text") {
 					const v = joinDictation(answerTextRef.current, t);
 					answerTextRef.current = v;
 					setText(v);
@@ -581,6 +603,31 @@ function QuestionDockForm({
 		onSubmit(buildAnswer(qd, captureRequest(), toolName));
 	};
 
+	/* Send the steer line IN PLACE of an answer (personal build): the
+	 * question resolves as unanswered (no verdict, no confidence) carrying
+	 * the learner's message, and the teacher's next turn reads it. Dictation
+	 * finishes first so a spoken steer is never cut off; thinking written so
+	 * far rides along. */
+	const sendSteer = () => {
+		if (compactionRunning || preparing) return;
+		const go = () => {
+			const message = steerTextRef.current.trim();
+			if (!message) return;
+			const base = buildAnswer(qd, { dontKnow: true, values: [] }, toolName);
+			onSubmit({
+				...base,
+				dontKnow: false,
+				answers: [],
+				correct: undefined,
+				confidence: undefined,
+				redirect: message,
+				thinking: qd.mode !== "text" ? thinkingTextRef.current.trim() || undefined : undefined,
+			});
+		};
+		if (!isDictationActive()) go();
+		else void finishDictation().then(go);
+	};
+
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): the same
 	 * law as the practice dock — dictated answers rarely focus the field.
 	 * Rides submit() so the dictation-flush law is shared, not forked. */
@@ -608,6 +655,12 @@ function QuestionDockForm({
 	const [kbdIdx, setKbdIdx] = useState<number | null>(null);
 	const otherInputRef = useRef<HTMLDivElement>(null);
 	const thinkingRef = useRef<HTMLDivElement>(null);
+	const answerRef = useRef<HTMLDivElement>(null);
+	// A text question has no rows to pick — its answer field takes the
+	// keyboard as soon as the question opens (personal build).
+	useEffect(() => {
+		if (active && qd.mode === "text" && isInteractionScopeEligible(rootRef.current, controller)) answerRef.current?.focus({ preventScroll: true });
+	}, [active, qd.mode, controller]);
 	// One row past the options is the trailing row: quiz → don't-know,
 	// ask → Other (a question never has both). Text mode (ask/explain)
 	// has no rows — the composer IS the answer surface.
@@ -682,6 +735,16 @@ function QuestionDockForm({
 			// Keys from a typing surface keep their meaning (arrows move
 			// the caret, space types).
 			if (typing || modded) return;
+			// 1–9 act on that row directly (the number shown on it) — the
+			// walk jumps there too, so Enter submits right after (personal build).
+			if (/^[1-9]$/.test(e.key)) {
+				const idx = Number(e.key) - 1;
+				if (idx >= rowCount) return;
+				e.preventDefault();
+				setKbdIdx(idx);
+				kbdAct(idx);
+				return;
+			}
 			if (e.key === "ArrowDown") {
 				e.preventDefault();
 				const next = Math.min((kbdIdx ?? -1) + 1, rowCount - 1);
@@ -722,6 +785,23 @@ function QuestionDockForm({
 		document.addEventListener("keydown", onKeyDown);
 		return () => document.removeEventListener("keydown", onKeyDown);
 	});
+
+	// S focuses the steer line (personal build) — every question kind, but
+	// never from a typing surface or with a modifier.
+	useEffect(() => {
+		if (!active) return;
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (e.key !== "s" && e.key !== "S") return;
+			if (e.altKey || e.metaKey || e.ctrlKey) return;
+			if (!isInteractionScopeEligible(rootRef.current, controller)) return;
+			const t = e.target as HTMLElement | null;
+			if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+			e.preventDefault();
+			steerRef.current?.focus();
+		};
+		document.addEventListener("keydown", onKeyDown);
+		return () => document.removeEventListener("keydown", onKeyDown);
+	}, [active, controller]);
 
 	// Keep the walked row visible (the question area scrolls internally).
 	useEffect(() => {
@@ -959,6 +1039,7 @@ function QuestionDockForm({
 									</ToolContentResponse>
 								)}
 							</span>
+							<RowKey index={i} />
 						</button>
 					);
 				})}
@@ -990,6 +1071,7 @@ function QuestionDockForm({
 							{sel.dontKnow && <span className="size-1.5 rounded-full bg-current" />}
 						</span>
 						<span>I don't know</span>
+						<RowKey index={optionCount} />
 					</button>
 				)}
 
@@ -1062,6 +1144,7 @@ function QuestionDockForm({
 							className={QC_OTHER_INPUT}
 							onClick={(e) => e.stopPropagation()}
 						/>
+						<RowKey index={optionCount} />
 					</div>
 				)}
 			</div>
@@ -1129,6 +1212,7 @@ function QuestionDockForm({
 					</div>
 					{qd.mode === "text" ? (
 						<PathInput
+							ref={answerRef}
 							value={text}
 							onValueChange={(value) => {
 								answerTextRef.current = value;
@@ -1205,6 +1289,49 @@ function QuestionDockForm({
 							Submit answer
 						</Button>
 					</div>
+				</div>
+				{/* Steer (personal build): a message to the teacher IN PLACE of
+				    an answer — "stop quizzing, show me how && short-circuits".
+				    S focuses it from anywhere in the dock; Enter sends; Esc
+				    leaves. While focused it takes dictated speech. */}
+				<div
+					data-testid="steer-field"
+					className="mt-1.5 flex items-center gap-2 rounded-[10px] border border-dashed border-border/70 px-2.5 py-1 focus-within:border-primary/50"
+				>
+					<input
+						ref={steerRef}
+						value={steer}
+						onChange={(e) => {
+							steerTextRef.current = e.target.value;
+							setSteer(e.target.value);
+						}}
+						onFocus={() => { steerFocusedRef.current = true; }}
+						onBlur={() => { steerFocusedRef.current = false; }}
+						onKeyDown={(e) => {
+							if (e.key === "Escape") {
+								controller?.claimEscape(e);
+								e.preventDefault();
+								e.stopPropagation();
+								e.currentTarget.blur();
+							}
+							if (e.key === "Enter") {
+								e.preventDefault();
+								e.stopPropagation();
+								sendSteer();
+							}
+						}}
+						placeholder="Tell the teacher instead of answering… (S)"
+						aria-label="Message to the teacher instead of an answer"
+						className="lh-input min-w-0 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground/70"
+					/>
+					<button
+						type="button"
+						onClick={sendSteer}
+						disabled={steer.trim().length === 0 || compactionRunning || preparing}
+						className="shrink-0 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-40 disabled:no-underline"
+					>
+						Send
+					</button>
 				</div>
 			</form>
 		</div>

@@ -323,7 +323,7 @@ describe("render smoke tests", () => {
 		// COLLAPSED ARRIVAL (owner round 2, 2026-10-05): the SSR output is the
 		// trigger row only — the thinking text is one click away, never loud.
 		assert.ok(html.includes('data-testid="your-thinking-trigger"'), "the trigger row");
-		assert.ok(html.includes('aria-expanded="false"'), "arrives collapsed");
+		assert.ok(html.includes('aria-expanded="true"'), "arrives expanded (personal build; upstream arrives collapsed)");
 		// ONE GEOMETRY, NO BAND IN CARDS (owner round five, 2026-10-07): the
 		// accent lift read too light — rail only, heights match everywhere.
 		const yourRow = html.slice(html.indexOf('data-testid="your-thinking"'));
@@ -333,7 +333,7 @@ describe("render smoke tests", () => {
 		const railAt = html.indexOf("border-l-[calc(3ch-14px)]");
 		const trigAt = html.indexOf("your-thinking-trigger");
 		assert.ok(railAt !== -1 && railAt < trigAt, "the rail opens before the label (same quote)");
-		assert.ok(!html.includes("brightness isn&#x27;t distance"), "the text is hidden until expanded");
+		assert.ok(html.includes("brightness isn&#x27;t distance"), "the text shows on arrival (personal build)");
 		assert.ok(!html.includes("Note:"), "no longer a muted 'Note:' footnote");
 		// The thinking sits ABOVE the verdict's explanation — the dialogue of
 		// thinking, not an afterthought.
@@ -748,7 +748,7 @@ describe("predict vs check rendering", () => {
 		// render their text; the in-card answer thinking stays collapsed.
 		assert.ok(html.includes('data-testid="your-thinking-trigger"'), "the answer thinking stays inside the card");
 		assert.ok(html.includes("was unsure mid-paragraph"), "the lifted row arrives expanded");
-		assert.ok(!html.includes("answering thought"), "the in-card row stays collapsed");
+		assert.ok(html.includes("answering thought"), "the in-card row arrives expanded (personal build)");
 		const legacy = { ...buildAnswer(quizQD(), { values: ["Mercury"] }), note: "a 2026-09 answer" };
 		const legacyHtml = renderToStaticMarkup(<AnsweredCard answer={legacy} />);
 		assert.ok(legacyHtml.includes("a 2026-09 answer") || legacyHtml.includes('data-testid="your-thinking-trigger"'), "records from before the rename still render");

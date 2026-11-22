@@ -103,6 +103,15 @@ While a select question is expanded and active:
 Text-only questions have no answer-row machine; their answer field uses the
 submission conventions above.
 
+Personal build additions (not upstream):
+
+- **1–9** act on the numbered answer row directly (the digit is shown at the
+  right of each row); **Enter** then submits.
+- Every question, teach checks included, arrives open; a text question puts
+  the cursor in its answer field, and dictation starts by itself.
+- **S** jumps to the *Tell the teacher instead of answering…* line; **Enter**
+  there sends the message and resolves the question as not answered.
+
 ## Chains view
 
 - **Mod+F** focuses the chains search while the view is open, rather than the

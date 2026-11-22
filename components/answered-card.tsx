@@ -130,6 +130,16 @@ export function AnsweredCard({ answer: savedAnswer, input, toolCallId }: { answe
 			</div>
 		);
 	}
+	// A steer in place of an answer (personal build): the question, then
+	// what the learner told the teacher instead — no verdict.
+	if (answer.redirect) {
+		return (
+			<div data-testid="redirect-card" className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
+				<span className="font-medium">{answer.questionText}</span> — not answered
+				<p className="mt-2 text-foreground">You told the teacher: {answer.redirect}</p>
+			</div>
+		);
+	}
 
 	const isQuiz = answer.kind === "quiz";
 	const isExplain = answer.kind === "explain";
@@ -298,6 +308,7 @@ export function AnsweredCard({ answer: savedAnswer, input, toolCallId }: { answe
 					text={answer.thinking ?? answer.note ?? ""}
 					images={answer.images?.thinking}
 					inCard
+					defaultOpen
 				/>
 			)}
 
