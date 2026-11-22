@@ -379,11 +379,13 @@ export function QuestionDockBar({
 
 /** The expanded question: label, question, options, and the unified bottom row. */
 /** The digit that acts on a row (1–9; rows past nine have no key).
- *  Personal build: number keys answer without the arrow walk. */
+ *  Personal build: number keys answer without the arrow walk. Rendered
+ *  FIRST in the row and moved to the end with flex order, so the label
+ *  stays the row's last element (view readers and tests rely on that). */
 function RowKey({ index }: { index: number }) {
 	if (index > 8) return null;
 	return (
-		<kbd aria-hidden data-row-key={index + 1} className="ml-auto shrink-0 self-center pl-2 font-mono text-[10px] text-muted-foreground/50">
+		<kbd aria-hidden data-row-key={index + 1} className="order-last ml-auto shrink-0 self-center pl-2 font-mono text-[10px] text-muted-foreground/50">
 			{index + 1}
 		</kbd>
 	);
@@ -1007,6 +1009,7 @@ function QuestionDockForm({
 								i === kbdIdx && !isSel && "ring-1 ring-border bg-accent/40",
 							)}
 						>
+							<RowKey index={i} />
 							<span
 								className={cn(
 									QC_OPTION_MARK,
@@ -1039,7 +1042,6 @@ function QuestionDockForm({
 									</ToolContentResponse>
 								)}
 							</span>
-							<RowKey index={i} />
 						</button>
 					);
 				})}
@@ -1060,6 +1062,7 @@ function QuestionDockForm({
 							kbdIdx === optionCount && !sel.dontKnow && "ring-1 ring-border bg-accent/40",
 						)}
 					>
+						<RowKey index={optionCount} />
 						<span
 							className={cn(
 								QC_OPTION_MARK, "rounded-full",
@@ -1071,7 +1074,6 @@ function QuestionDockForm({
 							{sel.dontKnow && <span className="size-1.5 rounded-full bg-current" />}
 						</span>
 						<span>I don't know</span>
-						<RowKey index={optionCount} />
 					</button>
 				)}
 
@@ -1088,6 +1090,7 @@ function QuestionDockForm({
 							kbdIdx === optionCount && !sel.otherSelected && "ring-1 ring-border bg-accent/40",
 						)}
 					>
+						<RowKey index={optionCount} />
 						<span
 							className={cn(
 								QC_OPTION_MARK,
@@ -1144,7 +1147,6 @@ function QuestionDockForm({
 							className={QC_OTHER_INPUT}
 							onClick={(e) => e.stopPropagation()}
 						/>
-						<RowKey index={optionCount} />
 					</div>
 				)}
 			</div>

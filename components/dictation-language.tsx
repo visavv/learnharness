@@ -57,7 +57,7 @@ export function DictationEndpointSetting() {
 			data-testid="dictation-endpoint"
 			disabled={active || saving || language === undefined}
 			spellCheck={false}
-			className="h-7 w-56 min-w-0 rounded-sm border border-border bg-background px-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50 aria-invalid:border-red-500"
+			className="h-7 w-56 min-w-0 rounded-sm border border-border bg-background px-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-muted-foreground/50 aria-invalid:border-error"
 		/>
 	</SettingsRow>;
 }
